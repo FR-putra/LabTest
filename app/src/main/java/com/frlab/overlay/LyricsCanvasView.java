@@ -21,8 +21,8 @@ public class LyricsCanvasView extends View {
     private static final String[][] SAMPLE_LYRICS = new String[][]{
             {"Malam ini bintang jatuh perlahan", "Tonight the stars fall in slow motion"},
             {"Bass bergetar di balik layar kaca", "Sub-bass vibrating behind the glass"},
-            {"Tembus sentuhan tanpa meredup cahaya", "Click-through active without losing glow"},
-            {"Tumpukan sepuluh lapis tetap tembus klik", "Ten stacked overlay windows passing touch"},
+            {"Satu jendela terang tembus beranda", "Single window bright glow passing touch"},
+            {"Tumpukan sepuluh pass di satu kanvas", "Ten internal passes inside one canvas"},
             {"Cahaya overdrive dua ratus persen", "Two hundred percent luminance overdrive"}
     };
 
@@ -128,7 +128,7 @@ public class LyricsCanvasView extends View {
     protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
         int screenW = getResources().getDisplayMetrics().widthPixels;
         int w = (int) (screenW * 0.92f);
-        int h = (int) dp(130f);
+        int h = (int) dp(134f);
         setMeasuredDimension(w, h);
     }
 
@@ -136,6 +136,7 @@ public class LyricsCanvasView extends View {
     protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
 
+        int passes = Math.min(10, Math.max(1, LabState.stackLayers));
         int opacityPct = LabState.opacityPercent;
         float baseAlphaRatio = Math.min(100, Math.max(0, opacityPct)) / 100f;
         float overdriveRatio = opacityPct > 100 ? (opacityPct - 100) / 100f : 0f;
@@ -159,14 +160,13 @@ public class LyricsCanvasView extends View {
         float cursorY;
 
         if (LabState.showDiagnosticPill) {
-            String layerTag = LabState.stackLayers + "xWIN";
             String modeTag = "M" + LabState.activeMethod
-                    + " | " + layerTag
+                    + " | 1xWIN | Pass=" + passes + "x"
                     + " | " + (LabState.lockClickThrough ? "LOCK" : "DRAG")
                     + " | Alpha=" + String.format("%.2f", LabState.lastAppliedWindowAlpha)
                     + " | " + opacityPct + "%";
             pillTextPaint.setTextSize(dp(10f));
-            int pillTextAlpha = Math.min(255, Math.round(coreAlpha * (0.85f + 0.15f * overdriveRatio)));
+            int pillTextAlpha = Math.min(255, Math.round(coreAlpha * (0.88f + 0.12f * overdriveRatio)));
             pillTextPaint.setColor(Color.argb(pillTextAlpha, 255, 255, 255));
 
             float textW = pillTextPaint.measureText(modeTag);
@@ -174,12 +174,13 @@ public class LyricsCanvasView extends View {
             float pillH = dp(19f);
             pillRect.set(centerX - textW / 2f - padH, dp(5f), centerX + textW / 2f + padH, dp(5f) + pillH);
 
-            int bgAlpha = Math.min(240, Math.round((150f + 70f * overdriveRatio) * baseAlphaRatio));
-            pillBgPaint.setColor(Color.argb(bgAlpha, 12, 22, 42));
+            float passBoost = Math.min(1f, (passes - 1) / 9f);
+            int bgAlpha = Math.min(245, Math.round((150f + 55f * overdriveRatio + 35f * passBoost) * baseAlphaRatio));
+            pillBgPaint.setColor(Color.argb(bgAlpha, 10, 18, 36));
             canvas.drawRoundRect(pillRect, pillH / 2f, pillH / 2f, pillBgPaint);
 
-            pillBorderPaint.setStrokeWidth(dp(1.2f + overdriveRatio * 1.4f));
-            int borderAlpha = Math.min(255, Math.round(coreAlpha * (0.45f + 0.55f * overdriveRatio)));
+            pillBorderPaint.setStrokeWidth(dp(1.2f + overdriveRatio * 1.1f + passBoost * 0.6f));
+            int borderAlpha = Math.min(255, Math.round(coreAlpha * (0.50f + 0.50f * Math.max(overdriveRatio, passBoost))));
             pillBorderPaint.setColor(Color.argb(borderAlpha, 125, 211, 252));
             canvas.drawRoundRect(pillRect, pillH / 2f, pillH / 2f, pillBorderPaint);
 
@@ -196,7 +197,7 @@ public class LyricsCanvasView extends View {
         float mainOffsetY = (1f - ease) * dp(8f);
         int animCoreAlpha = Math.round(coreAlpha * (0.35f + 0.65f * ease));
 
-        drawSuperBrightLine(
+        drawMultiPassLine(
                 canvas,
                 primaryLine,
                 centerX,
@@ -204,6 +205,7 @@ public class LyricsCanvasView extends View {
                 mainTextSize,
                 animCoreAlpha,
                 overdriveRatio,
+                passes,
                 Color.rgb(255, 255, 255),
                 Color.rgb(56, 189, 248),
                 true
@@ -212,9 +214,9 @@ public class LyricsCanvasView extends View {
         float gapPx = dp(10f);
         float subTextSize = dp(14.5f);
         float subY = cursorY + mainTextSize + gapPx + (1f - followEase) * dp(10f);
-        int subAlpha = Math.round(coreAlpha * 0.95f * (0.25f + 0.75f * followEase));
+        int subAlpha = Math.round(coreAlpha * 0.96f * (0.25f + 0.75f * followEase));
 
-        drawSuperBrightLine(
+        drawMultiPassLine(
                 canvas,
                 secondaryLine,
                 centerX,
@@ -222,13 +224,14 @@ public class LyricsCanvasView extends View {
                 subTextSize,
                 subAlpha,
                 overdriveRatio,
+                passes,
                 Color.rgb(224, 242, 254),
                 Color.rgb(192, 132, 252),
                 false
         );
     }
 
-    private void drawSuperBrightLine(
+    private void drawMultiPassLine(
             Canvas canvas,
             String text,
             float x,
@@ -236,6 +239,7 @@ public class LyricsCanvasView extends View {
             float textSize,
             int alpha,
             float overdrive,
+            int passes,
             int coreColor,
             int auraColor,
             boolean isPrimary
@@ -249,47 +253,67 @@ public class LyricsCanvasView extends View {
         darkP.setTextSize(textSize);
         rimP.setTextSize(textSize);
         fillP.setTextSize(textSize);
-
-        float wideW = dp(isPrimary ? 9.5f : 7.5f) + overdrive * dp(11.0f);
-        auraP.setStrokeWidth(wideW);
-        int wideAlpha = Math.min(255, Math.round(alpha * (0.22f + 0.45f * overdrive)));
-        auraP.setColor(Color.argb(wideAlpha, Color.red(auraColor), Color.green(auraColor), Color.blue(auraColor)));
-        canvas.drawText(text, x, y, auraP);
-
         if (isPrimary) {
             midGlowPaint.setTextSize(textSize);
-            midGlowPaint.setStrokeWidth(dp(5.5f) + overdrive * dp(6.0f));
-            int midAlpha = Math.min(255, Math.round(alpha * (0.35f + 0.55f * overdrive)));
-            int r = Math.min(255, Color.red(auraColor) + Math.round(160 * overdrive));
-            int g = Math.min(255, Color.green(auraColor) + Math.round(66 * overdrive));
-            int b = 255;
-            midGlowPaint.setColor(Color.argb(midAlpha, r, g, b));
-            canvas.drawText(text, x, y, midGlowPaint);
         }
 
-        darkP.setStrokeWidth(dp(isPrimary ? 3.5f : 2.8f));
-        darkP.setColor(Color.argb(alpha, 2, 6, 23));
-        canvas.drawText(text, x, y, darkP);
+        float stepShiftPx = dp(LabState.doubleOffsetDp) * 0.35f;
 
-        if (overdrive > 0.02f) {
-            rimP.setStrokeWidth(dp(1.2f) + overdrive * dp(1.8f));
-            int rimAlpha = Math.min(255, Math.round(alpha * (0.35f + 0.65f * overdrive)));
-            rimP.setColor(Color.argb(rimAlpha, 224, 242, 254));
-            canvas.drawText(text, x, y, rimP);
+        // Tahap 1: Tumpuk Outer Ambient Halo & Mid Neon Bloom (1..10 pass dalam 1 Canvas)
+        for (int p = 0; p < passes; p++) {
+            float px = x + (p * stepShiftPx);
+            float py = y + (p * stepShiftPx);
+            float layerRatio = passes > 1 ? (float) p / (passes - 1) : 0f;
+
+            float wideW = dp(isPrimary ? 8.5f : 6.8f) + overdrive * dp(9.0f) + layerRatio * dp(4.5f);
+            auraP.setStrokeWidth(wideW);
+            int wideAlpha = Math.min(255, Math.round(alpha * (0.14f + 0.24f * overdrive)));
+            auraP.setColor(Color.argb(wideAlpha, Color.red(auraColor), Color.green(auraColor), Color.blue(auraColor)));
+            canvas.drawText(text, px, py, auraP);
+
+            if (isPrimary) {
+                midGlowPaint.setStrokeWidth(dp(4.8f) + overdrive * dp(4.5f) + layerRatio * dp(2.2f));
+                int midAlpha = Math.min(255, Math.round(alpha * (0.22f + 0.34f * overdrive)));
+                int r = Math.min(255, Color.red(auraColor) + Math.round(140 * overdrive));
+                int g = Math.min(255, Color.green(auraColor) + Math.round(60 * overdrive));
+                midGlowPaint.setColor(Color.argb(midAlpha, r, g, 255));
+                canvas.drawText(text, px, py, midGlowPaint);
+            }
         }
 
-        fillP.setColor(Color.argb(alpha, Color.red(coreColor), Color.green(coreColor), Color.blue(coreColor)));
-        canvas.drawText(text, x, y, fillP);
+        // Tahap 2: Tumpuk Outline Hitam Pekat & Inner Rim agar pinggiran anti-alias 100% solid
+        for (int p = 0; p < passes; p++) {
+            float px = x + (p * stepShiftPx);
+            float py = y + (p * stepShiftPx);
 
+            darkP.setStrokeWidth(dp(isPrimary ? 3.6f : 2.9f));
+            darkP.setColor(Color.argb(alpha, 2, 6, 23));
+            canvas.drawText(text, px, py, darkP);
+
+            if (passes > 1 || overdrive > 0.02f) {
+                float rimBoost = Math.min(1f, ((passes - 1) / 5f) + overdrive);
+                rimP.setStrokeWidth(dp(1.1f) + rimBoost * dp(1.4f));
+                int rimAlpha = Math.min(255, Math.round(alpha * (0.25f + 0.55f * rimBoost)));
+                rimP.setColor(Color.argb(rimAlpha, 224, 242, 254));
+                canvas.drawText(text, px, py, rimP);
+            }
+
+            fillP.setColor(Color.argb(alpha, Color.red(coreColor), Color.green(coreColor), Color.blue(coreColor)));
+            canvas.drawText(text, px, py, fillP);
+        }
+
+        // Tahap 3: Puncak Putih Terang (Overdrive 101% - 200%) di lapisan paling atas
         if (overdrive > 0.01f) {
+            float topX = x + ((passes - 1) * stepShiftPx);
+            float topY = y + ((passes - 1) * stepShiftPx);
             int boost1 = Math.min(255, Math.round(alpha * overdrive));
             fillP.setColor(Color.argb(boost1, 255, 255, 255));
-            canvas.drawText(text, x, y, fillP);
+            canvas.drawText(text, topX, topY, fillP);
 
             if (overdrive > 0.50f) {
                 int boost2 = Math.min(255, Math.round(alpha * (overdrive - 0.50f) * 2f));
                 fillP.setColor(Color.argb(boost2, 255, 255, 255));
-                canvas.drawText(text, x, y, fillP);
+                canvas.drawText(text, topX, topY, fillP);
             }
         }
     }

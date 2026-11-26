@@ -10,12 +10,8 @@ import android.graphics.PixelFormat;
 import android.os.Build;
 import android.os.IBinder;
 import android.provider.Settings;
-import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.WindowManager;
-
-import java.util.ArrayList;
-import java.util.List;
 
 public class OverlayLabService extends Service implements LabState.Listener, LyricsCanvasView.DragCallback {
 
@@ -23,8 +19,8 @@ public class OverlayLabService extends Service implements LabState.Listener, Lyr
     private static final int NOTIF_ID = 1601;
 
     private WindowManager windowManager;
-    private final List<LyricsCanvasView> layerViews = new ArrayList<>();
-    private final List<WindowManager.LayoutParams> layerParams = new ArrayList<>();
+    private LyricsCanvasView overlayView;
+    private WindowManager.LayoutParams overlayParams;
 
     @Override
     public void onCreate() {
@@ -53,7 +49,7 @@ public class OverlayLabService extends Service implements LabState.Listener, Lyr
     @Override
     public void onDestroy() {
         LabState.removeListener(this);
-        removeAllLayers();
+        removeOverlay();
         super.onDestroy();
     }
 
@@ -69,14 +65,11 @@ public class OverlayLabService extends Service implements LabState.Listener, Lyr
 
     @Override
     public void onOverlayDragged() {
-        int offsetPx = dp(LabState.doubleOffsetDp);
-        for (int i = 0; i < layerViews.size(); i++) {
-            LyricsCanvasView view = layerViews.get(i);
-            WindowManager.LayoutParams lp = layerParams.get(i);
-            lp.x = LabState.posX + (i * offsetPx);
-            lp.y = LabState.posY + (i * offsetPx);
+        if (overlayView != null && overlayParams != null) {
+            overlayParams.x = LabState.posX;
+            overlayParams.y = LabState.posY;
             try {
-                windowManager.updateViewLayout(view, lp);
+                windowManager.updateViewLayout(overlayView, overlayParams);
             } catch (Exception ignored) {
             }
         }
@@ -88,76 +81,52 @@ public class OverlayLabService extends Service implements LabState.Listener, Lyr
                 || LabState.activeMethod == LabState.METHOD_4_TOUCH_REGION);
 
         if (!shouldShowStandardWindow || !Settings.canDrawOverlays(this)) {
-            removeAllLayers();
+            removeOverlay();
             return;
         }
 
-        int targetLayers = Math.min(10, Math.max(1, LabState.stackLayers));
         float winAlpha = computeWindowAlpha();
         LabState.lastAppliedWindowAlpha = winAlpha;
-        int offsetPx = dp(LabState.doubleOffsetDp);
 
-        // Hapus kelebihan layer jika slider diturunkan
-        while (layerViews.size() > targetLayers) {
-            int lastIdx = layerViews.size() - 1;
-            LyricsCanvasView view = layerViews.remove(lastIdx);
-            layerParams.remove(lastIdx);
-            try {
-                windowManager.removeView(view);
-            } catch (Exception ignored) {
-            }
-        }
-
-        // Tambah layer baru jika slider dinaikkan (1 sampai 10)
-        while (layerViews.size() < targetLayers) {
-            int idx = layerViews.size();
-            boolean isClone = idx > 0;
-            WindowManager.LayoutParams lp = new WindowManager.LayoutParams(
+        if (overlayView == null) {
+            overlayParams = new WindowManager.LayoutParams(
                     WindowManager.LayoutParams.WRAP_CONTENT,
                     WindowManager.LayoutParams.WRAP_CONTENT,
                     WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-                    computeFlags(isClone),
+                    computeFlags(),
                     PixelFormat.TRANSLUCENT
             );
-            lp.gravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL;
-            lp.x = LabState.posX + (idx * offsetPx);
-            lp.y = LabState.posY + (idx * offsetPx);
-            lp.alpha = winAlpha;
+            overlayParams.gravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL;
+            overlayParams.x = LabState.posX;
+            overlayParams.y = LabState.posY;
+            overlayParams.alpha = winAlpha;
 
-            LyricsCanvasView view = new LyricsCanvasView(this, isClone, isClone ? null : this);
+            overlayView = new LyricsCanvasView(this, false, this);
             try {
-                windowManager.addView(view, lp);
-                layerViews.add(view);
-                layerParams.add(lp);
+                windowManager.addView(overlayView, overlayParams);
             } catch (Exception e) {
-                break;
+                overlayView = null;
             }
-        }
-
-        // Update seluruh layer aktif secara serentak
-        for (int i = 0; i < layerViews.size(); i++) {
-            boolean isClone = i > 0;
-            LyricsCanvasView view = layerViews.get(i);
-            WindowManager.LayoutParams lp = layerParams.get(i);
-            lp.flags = computeFlags(isClone);
-            lp.x = LabState.posX + (i * offsetPx);
-            lp.y = LabState.posY + (i * offsetPx);
-            lp.alpha = winAlpha;
+        } else {
+            overlayParams.flags = computeFlags();
+            overlayParams.x = LabState.posX;
+            overlayParams.y = LabState.posY;
+            overlayParams.alpha = winAlpha;
             try {
-                windowManager.updateViewLayout(view, lp);
+                windowManager.updateViewLayout(overlayView, overlayParams);
             } catch (Exception ignored) {
             }
-            view.invalidate();
+            overlayView.invalidate();
         }
 
-        LabState.activeWindowCount = layerViews.size();
+        LabState.activeWindowCount = overlayView != null ? 1 : 0;
     }
 
-    private int computeFlags(boolean isClone) {
+    private int computeFlags() {
         int baseFlags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
                 | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN;
 
-        if (isClone || LabState.lockClickThrough) {
+        if (LabState.lockClickThrough) {
             return baseFlags | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;
         }
         return baseFlags;
@@ -173,24 +142,18 @@ public class OverlayLabService extends Service implements LabState.Listener, Lyr
         return requested;
     }
 
-    private void removeAllLayers() {
-        for (int i = layerViews.size() - 1; i >= 0; i--) {
+    private void removeOverlay() {
+        if (overlayView != null) {
             try {
-                windowManager.removeView(layerViews.get(i));
+                windowManager.removeView(overlayView);
             } catch (Exception ignored) {
             }
+            overlayView = null;
+            overlayParams = null;
         }
-        layerViews.clear();
-        layerParams.clear();
         if (LabState.activeMethod != LabState.METHOD_1_ACCESSIBILITY) {
             LabState.activeWindowCount = 0;
         }
-    }
-
-    private int dp(int val) {
-        return Math.round(TypedValue.applyDimension(
-                TypedValue.COMPLEX_UNIT_DIP, val, getResources().getDisplayMetrics()
-        ));
     }
 
     private void createNotificationChannel() {
@@ -208,7 +171,7 @@ public class OverlayLabService extends Service implements LabState.Listener, Lyr
     private Notification buildNotification() {
         return new Notification.Builder(this, CHANNEL_ID)
                 .setContentTitle("OverlayLab16 Aktif")
-                .setContentText("Menguji 1-10 lapis floating overlay di Android 16")
+                .setContentText("Single-Window Multi-Pass Overlay (1xWIN)")
                 .setSmallIcon(android.R.drawable.ic_media_play)
                 .setOngoing(true)
                 .build();
