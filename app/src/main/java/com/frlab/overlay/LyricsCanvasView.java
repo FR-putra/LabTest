@@ -11,33 +11,41 @@ import android.os.Looper;
 import android.util.TypedValue;
 import android.view.MotionEvent;
 import android.view.View;
-import android.view.WindowManager;
 
 public class LyricsCanvasView extends View {
+
+    public interface DragCallback {
+        void onOverlayDragged();
+    }
 
     private static final String[][] SAMPLE_LYRICS = new String[][]{
             {"Malam ini bintang jatuh perlahan", "Tonight the stars fall in slow motion"},
             {"Bass bergetar di balik layar kaca", "Sub-bass vibrating behind the glass"},
             {"Tembus sentuhan tanpa meredup cahaya", "Click-through active without losing glow"},
-            {"Overdrive dua ratus persen menyala", "Two hundred percent luminance overdrive"},
-            {"Lirik ganda mengikuti irama lagu", "Stacked double lyrics riding the beat"}
+            {"Double floating menumpuk dua lapisan", "Stacked dual overlay windows in sync"},
+            {"Cahaya overdrive dua ratus persen", "Two hundred percent luminance overdrive"}
     };
 
-    private final WindowManager windowManager;
-    private final WindowManager.LayoutParams layoutParams;
+    private final boolean isCloneLayer;
+    private final DragCallback dragCallback;
 
-    private final Paint strokePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-    private final Paint glowPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint outerAuraPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint midGlowPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint darkStrokePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint innerRimPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint fillPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-    private final Paint subStrokePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+
+    private final Paint subAuraPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint subDarkStrokePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint subInnerRimPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint subFillPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+
     private final Paint pillBgPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint pillBorderPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint pillTextPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final RectF pillRect = new RectF();
 
     private final Handler animHandler = new Handler(Looper.getMainLooper());
-    private int lyricIndex = 0;
-    private long lineStartMs = System.currentTimeMillis();
 
     private float initialTouchX;
     private float initialTouchY;
@@ -47,62 +55,57 @@ public class LyricsCanvasView extends View {
     private final Runnable ticker = new Runnable() {
         @Override
         public void run() {
-            long now = System.currentTimeMillis();
-            long elapsed = now - lineStartMs;
-            if (elapsed >= 3000L) {
-                lyricIndex = (lyricIndex + 1) % SAMPLE_LYRICS.length;
-                lineStartMs = now;
-                elapsed = 0L;
-            }
+            long elapsedTotal = System.currentTimeMillis() - LabState.syncEpochMs;
+            long elapsed = elapsedTotal % 3000L;
             invalidate();
 
-            if (elapsed < 460L) {
+            if (elapsed < 480L) {
                 animHandler.postDelayed(this, 33L);
             } else {
-                long waitMs = Math.max(50L, 3000L - elapsed);
+                long waitMs = Math.max(40L, 3000L - elapsed);
                 animHandler.postDelayed(this, waitMs);
             }
         }
     };
 
-    public LyricsCanvasView(Context context, WindowManager wm, WindowManager.LayoutParams params) {
+    public LyricsCanvasView(Context context, boolean isCloneLayer, DragCallback dragCallback) {
         super(context);
-        this.windowManager = wm;
-        this.layoutParams = params;
+        this.isCloneLayer = isCloneLayer;
+        this.dragCallback = dragCallback;
         setBackgroundColor(Color.TRANSPARENT);
 
         Typeface boldType = Typeface.create(Typeface.DEFAULT, Typeface.BOLD);
-        Typeface medType = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL);
+        Typeface medType = Typeface.create(Typeface.DEFAULT, Typeface.BOLD);
 
-        strokePaint.setTypeface(boldType);
-        strokePaint.setStyle(Paint.Style.STROKE);
-        strokePaint.setStrokeJoin(Paint.Join.ROUND);
-        strokePaint.setStrokeCap(Paint.Cap.ROUND);
-        strokePaint.setTextAlign(Paint.Align.CENTER);
+        setupStrokePaint(outerAuraPaint, boldType);
+        setupStrokePaint(midGlowPaint, boldType);
+        setupStrokePaint(darkStrokePaint, boldType);
+        setupStrokePaint(innerRimPaint, boldType);
+        setupFillPaint(fillPaint, boldType);
 
-        glowPaint.setTypeface(boldType);
-        glowPaint.setStyle(Paint.Style.STROKE);
-        glowPaint.setStrokeJoin(Paint.Join.ROUND);
-        glowPaint.setStrokeCap(Paint.Cap.ROUND);
-        glowPaint.setTextAlign(Paint.Align.CENTER);
-
-        fillPaint.setTypeface(boldType);
-        fillPaint.setStyle(Paint.Style.FILL);
-        fillPaint.setTextAlign(Paint.Align.CENTER);
-
-        subStrokePaint.setTypeface(medType);
-        subStrokePaint.setStyle(Paint.Style.STROKE);
-        subStrokePaint.setStrokeJoin(Paint.Join.ROUND);
-        subStrokePaint.setStrokeCap(Paint.Cap.ROUND);
-        subStrokePaint.setTextAlign(Paint.Align.CENTER);
-
-        subFillPaint.setTypeface(medType);
-        subFillPaint.setStyle(Paint.Style.FILL);
-        subFillPaint.setTextAlign(Paint.Align.CENTER);
+        setupStrokePaint(subAuraPaint, medType);
+        setupStrokePaint(subDarkStrokePaint, medType);
+        setupStrokePaint(subInnerRimPaint, medType);
+        setupFillPaint(subFillPaint, medType);
 
         pillBgPaint.setStyle(Paint.Style.FILL);
+        pillBorderPaint.setStyle(Paint.Style.STROKE);
         pillTextPaint.setTypeface(boldType);
         pillTextPaint.setTextAlign(Paint.Align.CENTER);
+    }
+
+    private void setupStrokePaint(Paint p, Typeface tf) {
+        p.setTypeface(tf);
+        p.setStyle(Paint.Style.STROKE);
+        p.setStrokeJoin(Paint.Join.ROUND);
+        p.setStrokeCap(Paint.Cap.ROUND);
+        p.setTextAlign(Paint.Align.CENTER);
+    }
+
+    private void setupFillPaint(Paint p, Typeface tf) {
+        p.setTypeface(tf);
+        p.setStyle(Paint.Style.FILL);
+        p.setTextAlign(Paint.Align.CENTER);
     }
 
     private float dp(float val) {
@@ -112,7 +115,6 @@ public class LyricsCanvasView extends View {
     @Override
     protected void onAttachedToWindow() {
         super.onAttachedToWindow();
-        lineStartMs = System.currentTimeMillis();
         animHandler.removeCallbacks(ticker);
         animHandler.post(ticker);
     }
@@ -126,8 +128,8 @@ public class LyricsCanvasView extends View {
     @Override
     protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
         int screenW = getResources().getDisplayMetrics().widthPixels;
-        int w = (int) (screenW * 0.90f);
-        int h = (int) dp(125f);
+        int w = (int) (screenW * 0.92f);
+        int h = (int) dp(130f);
         setMeasuredDimension(w, h);
     }
 
@@ -144,43 +146,60 @@ public class LyricsCanvasView extends View {
             return;
         }
 
-        long elapsed = System.currentTimeMillis() - lineStartMs;
+        // Sinkronisasi frame antara Window 1 dan Window 2 menggunakan epoch global
+        long elapsedTotal = Math.max(0L, System.currentTimeMillis() - LabState.syncEpochMs);
+        int lyricIndex = (int) ((elapsedTotal / 3000L) % SAMPLE_LYRICS.length);
+        long elapsed = elapsedTotal % 3000L;
+
         float enterProgress = Math.min(1f, elapsed / 260f);
         float ease = 1f - (1f - enterProgress) * (1f - enterProgress);
 
-        float followProgress = Math.min(1f, Math.max(0f, (elapsed - 120L) / 300f));
+        float followProgress = Math.min(1f, Math.max(0f, (elapsed - 110L) / 300f));
         float followEase = 1f - (1f - followProgress) * (1f - followProgress);
 
         float centerX = getWidth() / 2f;
         float cursorY;
 
         if (LabState.showDiagnosticPill) {
+            String layerTag = LabState.doubleOverlay ? "2xWIN" : "1xWIN";
             String modeTag = "M" + LabState.activeMethod
+                    + " | " + layerTag
                     + " | " + (LabState.lockClickThrough ? "LOCK" : "DRAG")
-                    + " | WinAlpha=" + String.format("%.2f", LabState.lastAppliedWindowAlpha)
-                    + " | Op=" + opacityPct + "%";
-            pillTextPaint.setTextSize(dp(10.5f));
-            pillTextPaint.setColor(Color.argb(coreAlpha, 224, 242, 254));
+                    + " | Alpha=" + String.format("%.2f", LabState.lastAppliedWindowAlpha)
+                    + " | " + opacityPct + "%";
+            pillTextPaint.setTextSize(dp(10f));
+            int pillTextAlpha = Math.min(255, Math.round(coreAlpha * (0.85f + 0.15f * overdriveRatio)));
+            pillTextPaint.setColor(Color.argb(pillTextAlpha, 255, 255, 255));
+
             float textW = pillTextPaint.measureText(modeTag);
             float padH = dp(10f);
-            float pillH = dp(18f);
-            pillRect.set(centerX - textW / 2f - padH, dp(4f), centerX + textW / 2f + padH, dp(4f) + pillH);
-            pillBgPaint.setColor(Color.argb(Math.round(160f * baseAlphaRatio), 15, 23, 42));
+            float pillH = dp(19f);
+            pillRect.set(centerX - textW / 2f - padH, dp(5f), centerX + textW / 2f + padH, dp(5f) + pillH);
+
+            int bgAlpha = Math.min(240, Math.round((150f + 70f * overdriveRatio) * baseAlphaRatio));
+            pillBgPaint.setColor(Color.argb(bgAlpha, 12, 22, 42));
             canvas.drawRoundRect(pillRect, pillH / 2f, pillH / 2f, pillBgPaint);
-            canvas.drawText(modeTag, centerX, dp(4f) + pillH * 0.72f, pillTextPaint);
-            cursorY = dp(48f);
+
+            // Border cahaya pada badge diagnostik
+            pillBorderPaint.setStrokeWidth(dp(1.2f + overdriveRatio * 1.4f));
+            int borderAlpha = Math.min(255, Math.round(coreAlpha * (0.45f + 0.55f * overdriveRatio)));
+            pillBorderPaint.setColor(Color.argb(borderAlpha, 125, 211, 252));
+            canvas.drawRoundRect(pillRect, pillH / 2f, pillH / 2f, pillBorderPaint);
+
+            canvas.drawText(modeTag, centerX, dp(5f) + pillH * 0.72f, pillTextPaint);
+            cursorY = dp(52f);
         } else {
-            cursorY = dp(34f);
+            cursorY = dp(38f);
         }
 
         String primaryLine = SAMPLE_LYRICS[lyricIndex][0];
         String secondaryLine = SAMPLE_LYRICS[lyricIndex][1];
 
-        float mainTextSize = dp(19f);
+        float mainTextSize = dp(19.5f);
         float mainOffsetY = (1f - ease) * dp(8f);
         int animCoreAlpha = Math.round(coreAlpha * (0.35f + 0.65f * ease));
 
-        drawEnhancedLine(
+        drawSuperBrightLine(
                 canvas,
                 primaryLine,
                 centerX,
@@ -193,28 +212,26 @@ public class LyricsCanvasView extends View {
                 true
         );
 
-        if (LabState.doubleLyrics) {
-            float gapPx = dp(LabState.doubleGapDp);
-            float subTextSize = dp(14.5f);
-            float subY = cursorY + mainTextSize + gapPx + (1f - followEase) * dp(10f);
-            int subAlpha = Math.round(coreAlpha * 0.90f * (0.25f + 0.75f * followEase));
+        float gapPx = dp(10f);
+        float subTextSize = dp(14.5f);
+        float subY = cursorY + mainTextSize + gapPx + (1f - followEase) * dp(10f);
+        int subAlpha = Math.round(coreAlpha * 0.95f * (0.25f + 0.75f * followEase));
 
-            drawEnhancedLine(
-                    canvas,
-                    secondaryLine,
-                    centerX,
-                    subY,
-                    subTextSize,
-                    subAlpha,
-                    overdriveRatio,
-                    Color.rgb(186, 230, 253),
-                    Color.rgb(168, 85, 247),
-                    false
-            );
-        }
+        drawSuperBrightLine(
+                canvas,
+                secondaryLine,
+                centerX,
+                subY,
+                subTextSize,
+                subAlpha,
+                overdriveRatio,
+                Color.rgb(224, 242, 254),
+                Color.rgb(192, 132, 252),
+                false
+        );
     }
 
-    private void drawEnhancedLine(
+    private void drawSuperBrightLine(
             Canvas canvas,
             String text,
             float x,
@@ -222,64 +239,88 @@ public class LyricsCanvasView extends View {
             float textSize,
             int alpha,
             float overdrive,
-            int fillColor,
-            int glowColor,
+            int coreColor,
+            int auraColor,
             boolean isPrimary
     ) {
-        Paint sPaint = isPrimary ? strokePaint : subStrokePaint;
-        Paint fPaint = isPrimary ? fillPaint : subFillPaint;
+        Paint auraP = isPrimary ? outerAuraPaint : subAuraPaint;
+        Paint darkP = isPrimary ? darkStrokePaint : subDarkStrokePaint;
+        Paint rimP = isPrimary ? innerRimPaint : subInnerRimPaint;
+        Paint fillP = isPrimary ? fillPaint : subFillPaint;
 
-        sPaint.setTextSize(textSize);
-        fPaint.setTextSize(textSize);
+        auraP.setTextSize(textSize);
+        darkP.setTextSize(textSize);
+        rimP.setTextSize(textSize);
+        fillP.setTextSize(textSize);
 
-        // Pass 1: Outer Neon Aura Stroke (murni vektor GPU tanpa ShadowLayer)
-        if (isPrimary || overdrive > 0.05f) {
-            glowPaint.setTextSize(textSize);
-            glowPaint.setStrokeWidth(dp(isPrimary ? 6.0f : 4.5f) + overdrive * dp(4.5f));
-            int glowAlpha = Math.min(255, Math.round(alpha * (0.28f + 0.52f * overdrive)));
-            glowPaint.setColor(Color.argb(glowAlpha, Color.red(glowColor), Color.green(glowColor), Color.blue(glowColor)));
-            canvas.drawText(text, x, y, glowPaint);
+        // 1. Wide Outer Ambient Light Halo (cahaya luas di sekeliling luar teks)
+        float wideW = dp(isPrimary ? 9.5f : 7.5f) + overdrive * dp(11.0f);
+        auraP.setStrokeWidth(wideW);
+        int wideAlpha = Math.min(255, Math.round(alpha * (0.22f + 0.45f * overdrive)));
+        auraP.setColor(Color.argb(wideAlpha, Color.red(auraColor), Color.green(auraColor), Color.blue(auraColor)));
+        canvas.drawText(text, x, y, auraP);
+
+        // 2. Intense Mid Neon Bloom (cahaya terang di dekat tepi huruf)
+        if (isPrimary) {
+            midGlowPaint.setTextSize(textSize);
+            midGlowPaint.setStrokeWidth(dp(5.5f) + overdrive * dp(6.0f));
+            int midAlpha = Math.min(255, Math.round(alpha * (0.35f + 0.55f * overdrive)));
+            int r = Math.min(255, Color.red(auraColor) + Math.round(160 * overdrive));
+            int g = Math.min(255, Color.green(auraColor) + Math.round(66 * overdrive));
+            int b = 255;
+            midGlowPaint.setColor(Color.argb(midAlpha, r, g, b));
+            canvas.drawText(text, x, y, midGlowPaint);
         }
 
-        // Pass 2: Outline hitam pekat untuk kontras tinggi di latar terang
-        float blackStrokeW = dp(isPrimary ? 3.8f : 3.0f) + (overdrive * dp(1.2f));
-        sPaint.setStrokeWidth(blackStrokeW);
-        sPaint.setColor(Color.argb(alpha, 0, 0, 0));
-        canvas.drawText(text, x, y, sPaint);
+        // 3. Crisp Dark Contrast Outline (menjaga keterbacaan di latar putih)
+        darkP.setStrokeWidth(dp(isPrimary ? 3.5f : 2.8f));
+        darkP.setColor(Color.argb(alpha, 2, 6, 23));
+        canvas.drawText(text, x, y, darkP);
 
-        // Pass 3: Core text fill
-        fPaint.setColor(Color.argb(alpha, Color.red(fillColor), Color.green(fillColor), Color.blue(fillColor)));
-        canvas.drawText(text, x, y, fPaint);
+        // 4. Bright Glowing Inner Rim (membuat luaran/pinggiran huruf menyala terang)
+        if (overdrive > 0.02f) {
+            rimP.setStrokeWidth(dp(1.2f) + overdrive * dp(1.8f));
+            int rimAlpha = Math.min(255, Math.round(alpha * (0.35f + 0.65f * overdrive)));
+            rimP.setColor(Color.argb(rimAlpha, 224, 242, 254));
+            canvas.drawText(text, x, y, rimP);
+        }
 
-        // Pass 4: Overdrive extra luminance pass (101% - 200%)
+        // 5. Core Text Fill
+        fillP.setColor(Color.argb(alpha, Color.red(coreColor), Color.green(coreColor), Color.blue(coreColor)));
+        canvas.drawText(text, x, y, fillP);
+
+        // 6. Overdrive White-Hot Luminance Passes (101% - 200%)
         if (overdrive > 0.01f) {
-            int boostAlpha = Math.min(255, Math.round(alpha * overdrive));
-            fPaint.setColor(Color.argb(boostAlpha, 255, 255, 255));
-            canvas.drawText(text, x, y, fPaint);
+            int boost1 = Math.min(255, Math.round(alpha * overdrive));
+            fillP.setColor(Color.argb(boost1, 255, 255, 255));
+            canvas.drawText(text, x, y, fillP);
+
+            if (overdrive > 0.50f) {
+                int boost2 = Math.min(255, Math.round(alpha * (overdrive - 0.50f) * 2f));
+                fillP.setColor(Color.argb(boost2, 255, 255, 255));
+                canvas.drawText(text, x, y, fillP);
+            }
         }
     }
 
     @Override
     public boolean onTouchEvent(MotionEvent event) {
-        if (LabState.lockClickThrough) {
+        if (isCloneLayer || LabState.lockClickThrough) {
             return false;
         }
         switch (event.getAction()) {
             case MotionEvent.ACTION_DOWN:
-                initialWindowX = layoutParams.x;
-                initialWindowY = layoutParams.y;
+                initialWindowX = LabState.posX;
+                initialWindowY = LabState.posY;
                 initialTouchX = event.getRawX();
                 initialTouchY = event.getRawY();
                 return true;
 
             case MotionEvent.ACTION_MOVE:
-                layoutParams.x = initialWindowX + Math.round(event.getRawX() - initialTouchX);
-                layoutParams.y = initialWindowY + Math.round(event.getRawY() - initialTouchY);
-                LabState.posX = layoutParams.x;
-                LabState.posY = layoutParams.y;
-                try {
-                    windowManager.updateViewLayout(this, layoutParams);
-                } catch (Exception ignored) {
+                LabState.posX = initialWindowX + Math.round(event.getRawX() - initialTouchX);
+                LabState.posY = initialWindowY + Math.round(event.getRawY() - initialTouchY);
+                if (dragCallback != null) {
+                    dragCallback.onOverlayDragged();
                 }
                 return true;
 

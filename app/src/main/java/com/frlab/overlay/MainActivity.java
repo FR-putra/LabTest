@@ -35,7 +35,7 @@ public class MainActivity extends Activity implements LabState.Listener {
 
     private TextView statusText;
     private TextView opacityValueText;
-    private TextView gapValueText;
+    private TextView offsetValueText;
     private Switch masterSwitch;
     private Switch lockSwitch;
     private CheckBox cap80Checkbox;
@@ -83,7 +83,7 @@ public class MainActivity extends Activity implements LabState.Listener {
         root.addView(title);
 
         TextView subtitle = new TextView(this);
-        subtitle.setText("Uji Metode 1, 3, 4 + Opacity 0-200% + Double Floating Lyrics");
+        subtitle.setText("Uji Metode 1, 3, 4 + Cahaya 0-200% + Double Window Overlay");
         subtitle.setTextColor(Color.parseColor("#94A3B8"));
         subtitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f);
         subtitle.setPadding(0, dp(4), 0, dp(14));
@@ -145,6 +145,9 @@ public class MainActivity extends Activity implements LabState.Listener {
                     return;
                 }
                 LabState.overlayEnabled = isChecked;
+                if (isChecked) {
+                    LabState.syncEpochMs = System.currentTimeMillis();
+                }
                 if (LabState.activeMethod != LabState.METHOD_1_ACCESSIBILITY) {
                     startService(new Intent(MainActivity.this, OverlayLabService.class));
                 }
@@ -204,7 +207,7 @@ public class MainActivity extends Activity implements LabState.Listener {
         root.addView(methodCard);
 
         LinearLayout opacityCard = makeCard();
-        opacityCard.addView(makeSectionTitle("4. Eksperimen Opacity (0% - 200% Overdrive)"));
+        opacityCard.addView(makeSectionTitle("4. Eksperimen Cahaya & Opacity (0% - 200%)"));
 
         opacityValueText = new TextView(this);
         opacityValueText.setTextColor(Color.parseColor("#38BDF8"));
@@ -236,31 +239,31 @@ public class MainActivity extends Activity implements LabState.Listener {
         root.addView(opacityCard);
 
         LinearLayout doubleCard = makeCard();
-        doubleCard.addView(makeSectionTitle("5. Eksperimen Double Floating Lyrics"));
+        doubleCard.addView(makeSectionTitle("5. Double Floating Overlay (Tumpuk 2 Window)"));
 
-        Switch doubleSwitch = makeSwitch("Aktifkan Double Floating Lyrics (2 Baris)", LabState.doubleLyrics);
+        Switch doubleSwitch = makeSwitch("Timpa Floating Utama dengan Duplikatnya (2 Layer Window)", LabState.doubleOverlay);
         doubleSwitch.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
             @Override
             public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
-                LabState.doubleLyrics = isChecked;
+                LabState.doubleOverlay = isChecked;
                 LabState.notifyChanged();
             }
         });
         doubleCard.addView(doubleSwitch);
 
-        gapValueText = new TextView(this);
-        gapValueText.setTextColor(Color.parseColor("#C084FC"));
-        gapValueText.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f);
-        doubleCard.addView(gapValueText);
+        offsetValueText = new TextView(this);
+        offsetValueText.setTextColor(Color.parseColor("#C084FC"));
+        offsetValueText.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f);
+        doubleCard.addView(offsetValueText);
 
-        SeekBar gapSeek = new SeekBar(this);
-        gapSeek.setMax(36);
-        gapSeek.setProgress(LabState.doubleGapDp);
-        gapSeek.setPadding(0, dp(6), 0, dp(8));
-        gapSeek.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+        SeekBar offsetSeek = new SeekBar(this);
+        offsetSeek.setMax(24);
+        offsetSeek.setProgress(LabState.doubleOffsetDp);
+        offsetSeek.setPadding(0, dp(6), 0, dp(8));
+        offsetSeek.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override
             public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
-                LabState.doubleGapDp = progress;
+                LabState.doubleOffsetDp = progress;
                 updateLabels();
                 LabState.notifyChanged();
             }
@@ -273,7 +276,7 @@ public class MainActivity extends Activity implements LabState.Listener {
             public void onStopTrackingTouch(SeekBar seekBar) {
             }
         });
-        doubleCard.addView(gapSeek);
+        doubleCard.addView(offsetSeek);
 
         Switch pillSwitch = makeSwitch("Tampilkan Badge Diagnostik di Overlay", LabState.showDiagnosticPill);
         pillSwitch.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
@@ -389,15 +392,16 @@ public class MainActivity extends Activity implements LabState.Listener {
 
         String status = "Izin Overlay: " + (canOverlay ? "AKTIF" : "BELUM")
                 + " | Aksesibilitas: " + accStatus
-                + "\nWindow Alpha dikirim ke OS: " + String.format("%.2f", LabState.lastAppliedWindowAlpha)
+                + "\nWindow Aktif: " + LabState.activeWindowCount + " Layer | WinAlpha: " + String.format("%.2f", LabState.lastAppliedWindowAlpha)
                 + "\nStatus Metode 4: " + LabState.method4Diagnostic;
         statusText.setText(status);
 
         int op = LabState.opacityPercent;
-        String modeDesc = op <= 100 ? "Standard Alpha" : "OVERDRIVE (Multi-Pass Glow + Luminance)";
-        opacityValueText.setText("Opacity: " + op + "% (" + modeDesc + ")");
+        String modeDesc = op <= 100 ? "Standard Alpha" : "SUPER BRIGHT OVERDRIVE (Halo + Inner Rim + Luminance)";
+        opacityValueText.setText("Cahaya & Opacity: " + op + "% (" + modeDesc + ")");
 
-        gapValueText.setText("Jarak Vertikal Baris 1 & 2: " + LabState.doubleGapDp + " dp");
+        String offsetDesc = LabState.doubleOffsetDp == 0 ? "0 dp (Tepat Ditimpa 100%)" : LabState.doubleOffsetDp + " dp (Geser untuk cek 2 layer)";
+        offsetValueText.setText("Posisi Layer Duplikat: " + offsetDesc);
     }
 
     private void requestNotificationPermissionIfNeeded() {
