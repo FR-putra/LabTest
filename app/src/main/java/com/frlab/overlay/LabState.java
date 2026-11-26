@@ -15,11 +15,11 @@ public class LabState {
     public static volatile boolean overlayEnabled = false;
     public static volatile int activeMethod = METHOD_3_DUAL_STROKE;
     public static volatile boolean lockClickThrough = false;
-    public static volatile int opacityPercent = 200;
+    public static volatile int opacityPercent = 100;
     public static volatile boolean capAlpha80InMethod3 = true;
 
-    // Double Floating Overlay: menumpuk 2 window overlay terpisah secara identik
-    public static volatile boolean doubleOverlay = true;
+    // Jumlah tumpukan window overlay (1 sampai 10 lapis)
+    public static volatile int stackLayers = 1;
     public static volatile int doubleOffsetDp = 0;
     public static volatile boolean showDiagnosticPill = true;
 
@@ -30,7 +30,7 @@ public class LabState {
     public static volatile boolean accessibilityConnected = false;
     public static volatile float lastAppliedWindowAlpha = 1.0f;
     public static volatile int activeWindowCount = 0;
-    public static volatile String method4Diagnostic = "Belum diuji";
+    public static volatile String method4Diagnostic = "Dinonaktifkan (Diblokir Android 16 saat Lock)";
 
     private static final CopyOnWriteArrayList<Listener> listeners = new CopyOnWriteArrayList<>();
 

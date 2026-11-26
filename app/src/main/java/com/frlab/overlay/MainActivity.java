@@ -18,6 +18,7 @@ import android.provider.Settings;
 import android.text.TextUtils;
 import android.util.Log;
 import android.util.TypedValue;
+import android.view.Gravity;
 import android.view.View;
 import android.widget.Button;
 import android.widget.CheckBox;
@@ -35,10 +36,10 @@ public class MainActivity extends Activity implements LabState.Listener {
 
     private TextView statusText;
     private TextView opacityValueText;
+    private TextView layersValueText;
     private TextView offsetValueText;
-    private Switch masterSwitch;
-    private Switch lockSwitch;
-    private CheckBox cap80Checkbox;
+    private SeekBar layersSeek;
+    private final Button[] quickLayerButtons = new Button[10];
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -76,14 +77,14 @@ public class MainActivity extends Activity implements LabState.Listener {
         scrollView.addView(root);
 
         TextView title = new TextView(this);
-        title.setText("OverlayLab16 - Uji Android 16");
+        title.setText("OverlayLab16 - Uji 1–10 Lapis");
         title.setTextColor(Color.WHITE);
         title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 21);
         title.setTypeface(null, Typeface.BOLD);
         root.addView(title);
 
         TextView subtitle = new TextView(this);
-        subtitle.setText("Uji Metode 1, 3, 4 + Cahaya 0-200% + Double Window Overlay");
+        subtitle.setText("Bandingkan Metode 1 vs Metode 3 dengan Tumpukan 1–10 Layer");
         subtitle.setTextColor(Color.parseColor("#94A3B8"));
         subtitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f);
         subtitle.setPadding(0, dp(4), 0, dp(14));
@@ -96,10 +97,11 @@ public class MainActivity extends Activity implements LabState.Listener {
         statusCard.addView(statusText);
         root.addView(statusCard);
 
+        // 1. Izin Sistem
         LinearLayout permCard = makeCard();
         permCard.addView(makeSectionTitle("1. Izin Sistem"));
 
-        Button btnOverlayPerm = makeButton("Buka Izin Overlay (Metode 3 & 4)", "#1E293B");
+        Button btnOverlayPerm = makeButton("Buka Izin Overlay (Metode 3)", "#1E293B");
         btnOverlayPerm.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -127,10 +129,11 @@ public class MainActivity extends Activity implements LabState.Listener {
         permCard.addView(btnAccPerm);
         root.addView(permCard);
 
+        // 2. Kontrol Utama
         LinearLayout controlCard = makeCard();
         controlCard.addView(makeSectionTitle("2. Kontrol Utama"));
 
-        masterSwitch = makeSwitch("Aktifkan Floating Lyrics", LabState.overlayEnabled);
+        Switch masterSwitch = makeSwitch("Aktifkan Floating Lyrics", LabState.overlayEnabled);
         masterSwitch.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
             @Override
             public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
@@ -156,7 +159,7 @@ public class MainActivity extends Activity implements LabState.Listener {
         });
         controlCard.addView(masterSwitch);
 
-        lockSwitch = makeSwitch("Mode Lock (Tembus Klik ke Layar Bawah)", LabState.lockClickThrough);
+        Switch lockSwitch = makeSwitch("Mode Lock (Tembus Klik ke Layar Bawah)", LabState.lockClickThrough);
         lockSwitch.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
             @Override
             public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
@@ -167,16 +170,129 @@ public class MainActivity extends Activity implements LabState.Listener {
         controlCard.addView(lockSwitch);
         root.addView(controlCard);
 
+        // 3. Tumpukan Lapisan 1 - 10 (Ditempatkan di atas agar mudah diuji)
+        LinearLayout stackCard = makeCard();
+        stackCard.addView(makeSectionTitle("3. Tumpukan Lapisan Overlay (1 – 10 Lapis)"));
+
+        layersValueText = new TextView(this);
+        layersValueText.setTextColor(Color.parseColor("#34D399"));
+        layersValueText.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13.5f);
+        layersValueText.setTypeface(null, Typeface.BOLD);
+        stackCard.addView(layersValueText);
+
+        // Baris Slider + Tombol - / +
+        LinearLayout sliderRow = new LinearLayout(this);
+        sliderRow.setOrientation(LinearLayout.HORIZONTAL);
+        sliderRow.setGravity(Gravity.CENTER_VERTICAL);
+        sliderRow.setPadding(0, dp(8), 0, dp(8));
+
+        Button btnMinus = makeCompactButton("-", "#1E293B");
+        btnMinus.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                setStackLayers(LabState.stackLayers - 1);
+            }
+        });
+        sliderRow.addView(btnMinus);
+
+        layersSeek = new SeekBar(this);
+        layersSeek.setMax(9); // 0..9 -> 1..10 lapis
+        layersSeek.setProgress(LabState.stackLayers - 1);
+        LinearLayout.LayoutParams seekLp = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+        seekLp.leftMargin = dp(8);
+        seekLp.rightMargin = dp(8);
+        layersSeek.setLayoutParams(seekLp);
+        layersSeek.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override
+            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                if (fromUser) {
+                    setStackLayers(progress + 1);
+                }
+            }
+
+            @Override
+            public void onStartTrackingTouch(SeekBar seekBar) {
+            }
+
+            @Override
+            public void onStopTrackingTouch(SeekBar seekBar) {
+            }
+        });
+        sliderRow.addView(layersSeek);
+
+        Button btnPlus = makeCompactButton("+", "#1E293B");
+        btnPlus.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                setStackLayers(LabState.stackLayers + 1);
+            }
+        });
+        sliderRow.addView(btnPlus);
+        stackCard.addView(sliderRow);
+
+        // Grid Tombol Cepat 1..5 dan 6..10
+        LinearLayout row1to5 = new LinearLayout(this);
+        row1to5.setOrientation(LinearLayout.HORIZONTAL);
+        for (int i = 1; i <= 5; i++) {
+            row1to5.addView(createQuickLayerBtn(i));
+        }
+        stackCard.addView(row1to5);
+
+        LinearLayout row6to10 = new LinearLayout(this);
+        row6to10.setOrientation(LinearLayout.HORIZONTAL);
+        row6to10.setPadding(0, dp(6), 0, dp(8));
+        for (int i = 6; i <= 10; i++) {
+            row6to10.addView(createQuickLayerBtn(i));
+        }
+        stackCard.addView(row6to10);
+
+        offsetValueText = new TextView(this);
+        offsetValueText.setTextColor(Color.parseColor("#C084FC"));
+        offsetValueText.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f);
+        stackCard.addView(offsetValueText);
+
+        SeekBar offsetSeek = new SeekBar(this);
+        offsetSeek.setMax(16);
+        offsetSeek.setProgress(LabState.doubleOffsetDp);
+        offsetSeek.setPadding(0, dp(6), 0, dp(8));
+        offsetSeek.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override
+            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                LabState.doubleOffsetDp = progress;
+                updateLabels();
+                LabState.notifyChanged();
+            }
+
+            @Override
+            public void onStartTrackingTouch(SeekBar seekBar) {
+            }
+
+            @Override
+            public void onStopTrackingTouch(SeekBar seekBar) {
+            }
+        });
+        stackCard.addView(offsetSeek);
+
+        Switch pillSwitch = makeSwitch("Tampilkan Badge Diagnostik di Overlay", LabState.showDiagnosticPill);
+        pillSwitch.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
+                LabState.showDiagnosticPill = isChecked;
+                LabState.notifyChanged();
+            }
+        });
+        stackCard.addView(pillSwitch);
+        root.addView(stackCard);
+
+        // 4. Pilih Metode
         LinearLayout methodCard = makeCard();
-        methodCard.addView(makeSectionTitle("3. Pilih Metode Tembus Klik"));
+        methodCard.addView(makeSectionTitle("4. Pilih Metode Tembus Klik"));
 
         RadioGroup methodGroup = new RadioGroup(this);
         RadioButton rb1 = makeRadio("Metode 1: TYPE_ACCESSIBILITY_OVERLAY (100% Solid)", 1);
         RadioButton rb3 = makeRadio("Metode 3: Dual-Stroke + Zero BG (Aman Play Store)", 3);
-        RadioButton rb4 = makeRadio("Metode 4: TouchableRegion Reflection (Alpha 1.0)", 4);
         methodGroup.addView(rb1);
         methodGroup.addView(rb3);
-        methodGroup.addView(rb4);
         methodGroup.check(LabState.activeMethod);
 
         methodGroup.setOnCheckedChangeListener(new RadioGroup.OnCheckedChangeListener() {
@@ -191,8 +307,8 @@ public class MainActivity extends Activity implements LabState.Listener {
         });
         methodCard.addView(methodGroup);
 
-        cap80Checkbox = new CheckBox(this);
-        cap80Checkbox.setText("Metode 3: Kunci Window Alpha max 0.80 saat Lock (Wajib agar tidak diblokir Android 16)");
+        CheckBox cap80Checkbox = new CheckBox(this);
+        cap80Checkbox.setText("Metode 3: Kunci Window Alpha max 0.80 saat Lock (Wajib agar tembus klik)");
         cap80Checkbox.setTextColor(Color.parseColor("#CBD5E1"));
         cap80Checkbox.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f);
         cap80Checkbox.setChecked(LabState.capAlpha80InMethod3);
@@ -206,8 +322,9 @@ public class MainActivity extends Activity implements LabState.Listener {
         methodCard.addView(cap80Checkbox);
         root.addView(methodCard);
 
+        // 5. Eksperimen Cahaya & Opacity (0% - 200%)
         LinearLayout opacityCard = makeCard();
-        opacityCard.addView(makeSectionTitle("4. Eksperimen Cahaya & Opacity (0% - 200%)"));
+        opacityCard.addView(makeSectionTitle("5. Eksperimen Cahaya & Opacity (0% – 200%)"));
 
         opacityValueText = new TextView(this);
         opacityValueText.setTextColor(Color.parseColor("#38BDF8"));
@@ -238,58 +355,55 @@ public class MainActivity extends Activity implements LabState.Listener {
         opacityCard.addView(opacitySeek);
         root.addView(opacityCard);
 
-        LinearLayout doubleCard = makeCard();
-        doubleCard.addView(makeSectionTitle("5. Double Floating Overlay (Tumpuk 2 Window)"));
-
-        Switch doubleSwitch = makeSwitch("Timpa Floating Utama dengan Duplikatnya (2 Layer Window)", LabState.doubleOverlay);
-        doubleSwitch.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
-            @Override
-            public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
-                LabState.doubleOverlay = isChecked;
-                LabState.notifyChanged();
-            }
-        });
-        doubleCard.addView(doubleSwitch);
-
-        offsetValueText = new TextView(this);
-        offsetValueText.setTextColor(Color.parseColor("#C084FC"));
-        offsetValueText.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f);
-        doubleCard.addView(offsetValueText);
-
-        SeekBar offsetSeek = new SeekBar(this);
-        offsetSeek.setMax(24);
-        offsetSeek.setProgress(LabState.doubleOffsetDp);
-        offsetSeek.setPadding(0, dp(6), 0, dp(8));
-        offsetSeek.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            @Override
-            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
-                LabState.doubleOffsetDp = progress;
-                updateLabels();
-                LabState.notifyChanged();
-            }
-
-            @Override
-            public void onStartTrackingTouch(SeekBar seekBar) {
-            }
-
-            @Override
-            public void onStopTrackingTouch(SeekBar seekBar) {
-            }
-        });
-        doubleCard.addView(offsetSeek);
-
-        Switch pillSwitch = makeSwitch("Tampilkan Badge Diagnostik di Overlay", LabState.showDiagnosticPill);
-        pillSwitch.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
-            @Override
-            public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
-                LabState.showDiagnosticPill = isChecked;
-                LabState.notifyChanged();
-            }
-        });
-        doubleCard.addView(pillSwitch);
-        root.addView(doubleCard);
-
         setContentView(scrollView);
+    }
+
+    private void setStackLayers(int target) {
+        int clamped = Math.min(10, Math.max(1, target));
+        LabState.stackLayers = clamped;
+        if (layersSeek != null && layersSeek.getProgress() != clamped - 1) {
+            layersSeek.setProgress(clamped - 1);
+        }
+        updateLabels();
+        LabState.notifyChanged();
+    }
+
+    private Button createQuickLayerBtn(final int layerNum) {
+        Button btn = new Button(this);
+        btn.setText(String.valueOf(layerNum));
+        btn.setTextColor(Color.WHITE);
+        btn.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
+        btn.setTypeface(null, Typeface.BOLD);
+        btn.setPadding(0, dp(6), 0, dp(6));
+
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(38), 1f);
+        int margin = dp(3);
+        lp.setMargins(margin, 0, margin, 0);
+        btn.setLayoutParams(lp);
+
+        btn.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                setStackLayers(layerNum);
+            }
+        });
+
+        quickLayerButtons[layerNum - 1] = btn;
+        return btn;
+    }
+
+    private Button makeCompactButton(String label, String hexColor) {
+        Button btn = new Button(this);
+        btn.setText(label);
+        btn.setTextColor(Color.WHITE);
+        btn.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f);
+        btn.setTypeface(null, Typeface.BOLD);
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(Color.parseColor(hexColor));
+        bg.setCornerRadius(dp(8));
+        btn.setBackground(bg);
+        btn.setLayoutParams(new LinearLayout.LayoutParams(dp(42), dp(38)));
+        return btn;
     }
 
     private void showCrashScreen(final Throwable t) {
@@ -392,16 +506,34 @@ public class MainActivity extends Activity implements LabState.Listener {
 
         String status = "Izin Overlay: " + (canOverlay ? "AKTIF" : "BELUM")
                 + " | Aksesibilitas: " + accStatus
-                + "\nWindow Aktif: " + LabState.activeWindowCount + " Layer | WinAlpha: " + String.format("%.2f", LabState.lastAppliedWindowAlpha)
-                + "\nStatus Metode 4: " + LabState.method4Diagnostic;
+                + "\nWindow Aktif: " + LabState.activeWindowCount + " Lapis | WinAlpha: " + String.format("%.2f", LabState.lastAppliedWindowAlpha)
+                + "\nMetode 4: " + LabState.method4Diagnostic;
         statusText.setText(status);
 
-        int op = LabState.opacityPercent;
-        String modeDesc = op <= 100 ? "Standard Alpha" : "SUPER BRIGHT OVERDRIVE (Halo + Inner Rim + Luminance)";
-        opacityValueText.setText("Cahaya & Opacity: " + op + "% (" + modeDesc + ")");
+        int layers = LabState.stackLayers;
+        double effectiveOpacity = (1.0 - Math.pow(1.0 - LabState.lastAppliedWindowAlpha, layers)) * 100.0;
+        layersValueText.setText(String.format("Jumlah Lapisan: %d Lapis (Opasitas Efektif: %.2f%%)", layers, effectiveOpacity));
 
-        String offsetDesc = LabState.doubleOffsetDp == 0 ? "0 dp (Tepat Ditimpa 100%)" : LabState.doubleOffsetDp + " dp (Geser untuk cek 2 layer)";
-        offsetValueText.setText("Posisi Layer Duplikat: " + offsetDesc);
+        for (int i = 0; i < quickLayerButtons.length; i++) {
+            Button btn = quickLayerButtons[i];
+            if (btn != null) {
+                GradientDrawable bg = new GradientDrawable();
+                boolean selected = (i + 1) == layers;
+                bg.setColor(Color.parseColor(selected ? "#059669" : "#1E293B"));
+                bg.setCornerRadius(dp(8));
+                if (selected) {
+                    bg.setStroke(dp(1), Color.parseColor("#6EE7B7"));
+                }
+                btn.setBackground(bg);
+            }
+        }
+
+        String offsetDesc = LabState.doubleOffsetDp == 0 ? "0 dp (Tepat Ditimpa 100%)" : LabState.doubleOffsetDp + " dp per lapis";
+        offsetValueText.setText("Geser Jarak Antar Lapisan: " + offsetDesc);
+
+        int op = LabState.opacityPercent;
+        String modeDesc = op <= 100 ? "Standard Alpha" : "SUPER BRIGHT OVERDRIVE";
+        opacityValueText.setText("Cahaya & Opacity: " + op + "% (" + modeDesc + ")");
     }
 
     private void requestNotificationPermissionIfNeeded() {

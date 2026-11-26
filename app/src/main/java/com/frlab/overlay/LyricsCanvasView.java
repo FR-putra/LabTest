@@ -22,7 +22,7 @@ public class LyricsCanvasView extends View {
             {"Malam ini bintang jatuh perlahan", "Tonight the stars fall in slow motion"},
             {"Bass bergetar di balik layar kaca", "Sub-bass vibrating behind the glass"},
             {"Tembus sentuhan tanpa meredup cahaya", "Click-through active without losing glow"},
-            {"Double floating menumpuk dua lapisan", "Stacked dual overlay windows in sync"},
+            {"Tumpukan sepuluh lapis tetap tembus klik", "Ten stacked overlay windows passing touch"},
             {"Cahaya overdrive dua ratus persen", "Two hundred percent luminance overdrive"}
     };
 
@@ -75,7 +75,6 @@ public class LyricsCanvasView extends View {
         setBackgroundColor(Color.TRANSPARENT);
 
         Typeface boldType = Typeface.create(Typeface.DEFAULT, Typeface.BOLD);
-        Typeface medType = Typeface.create(Typeface.DEFAULT, Typeface.BOLD);
 
         setupStrokePaint(outerAuraPaint, boldType);
         setupStrokePaint(midGlowPaint, boldType);
@@ -83,10 +82,10 @@ public class LyricsCanvasView extends View {
         setupStrokePaint(innerRimPaint, boldType);
         setupFillPaint(fillPaint, boldType);
 
-        setupStrokePaint(subAuraPaint, medType);
-        setupStrokePaint(subDarkStrokePaint, medType);
-        setupStrokePaint(subInnerRimPaint, medType);
-        setupFillPaint(subFillPaint, medType);
+        setupStrokePaint(subAuraPaint, boldType);
+        setupStrokePaint(subDarkStrokePaint, boldType);
+        setupStrokePaint(subInnerRimPaint, boldType);
+        setupFillPaint(subFillPaint, boldType);
 
         pillBgPaint.setStyle(Paint.Style.FILL);
         pillBorderPaint.setStyle(Paint.Style.STROKE);
@@ -146,7 +145,6 @@ public class LyricsCanvasView extends View {
             return;
         }
 
-        // Sinkronisasi frame antara Window 1 dan Window 2 menggunakan epoch global
         long elapsedTotal = Math.max(0L, System.currentTimeMillis() - LabState.syncEpochMs);
         int lyricIndex = (int) ((elapsedTotal / 3000L) % SAMPLE_LYRICS.length);
         long elapsed = elapsedTotal % 3000L;
@@ -161,7 +159,7 @@ public class LyricsCanvasView extends View {
         float cursorY;
 
         if (LabState.showDiagnosticPill) {
-            String layerTag = LabState.doubleOverlay ? "2xWIN" : "1xWIN";
+            String layerTag = LabState.stackLayers + "xWIN";
             String modeTag = "M" + LabState.activeMethod
                     + " | " + layerTag
                     + " | " + (LabState.lockClickThrough ? "LOCK" : "DRAG")
@@ -180,7 +178,6 @@ public class LyricsCanvasView extends View {
             pillBgPaint.setColor(Color.argb(bgAlpha, 12, 22, 42));
             canvas.drawRoundRect(pillRect, pillH / 2f, pillH / 2f, pillBgPaint);
 
-            // Border cahaya pada badge diagnostik
             pillBorderPaint.setStrokeWidth(dp(1.2f + overdriveRatio * 1.4f));
             int borderAlpha = Math.min(255, Math.round(coreAlpha * (0.45f + 0.55f * overdriveRatio)));
             pillBorderPaint.setColor(Color.argb(borderAlpha, 125, 211, 252));
@@ -253,14 +250,12 @@ public class LyricsCanvasView extends View {
         rimP.setTextSize(textSize);
         fillP.setTextSize(textSize);
 
-        // 1. Wide Outer Ambient Light Halo (cahaya luas di sekeliling luar teks)
         float wideW = dp(isPrimary ? 9.5f : 7.5f) + overdrive * dp(11.0f);
         auraP.setStrokeWidth(wideW);
         int wideAlpha = Math.min(255, Math.round(alpha * (0.22f + 0.45f * overdrive)));
         auraP.setColor(Color.argb(wideAlpha, Color.red(auraColor), Color.green(auraColor), Color.blue(auraColor)));
         canvas.drawText(text, x, y, auraP);
 
-        // 2. Intense Mid Neon Bloom (cahaya terang di dekat tepi huruf)
         if (isPrimary) {
             midGlowPaint.setTextSize(textSize);
             midGlowPaint.setStrokeWidth(dp(5.5f) + overdrive * dp(6.0f));
@@ -272,12 +267,10 @@ public class LyricsCanvasView extends View {
             canvas.drawText(text, x, y, midGlowPaint);
         }
 
-        // 3. Crisp Dark Contrast Outline (menjaga keterbacaan di latar putih)
         darkP.setStrokeWidth(dp(isPrimary ? 3.5f : 2.8f));
         darkP.setColor(Color.argb(alpha, 2, 6, 23));
         canvas.drawText(text, x, y, darkP);
 
-        // 4. Bright Glowing Inner Rim (membuat luaran/pinggiran huruf menyala terang)
         if (overdrive > 0.02f) {
             rimP.setStrokeWidth(dp(1.2f) + overdrive * dp(1.8f));
             int rimAlpha = Math.min(255, Math.round(alpha * (0.35f + 0.65f * overdrive)));
@@ -285,11 +278,9 @@ public class LyricsCanvasView extends View {
             canvas.drawText(text, x, y, rimP);
         }
 
-        // 5. Core Text Fill
         fillP.setColor(Color.argb(alpha, Color.red(coreColor), Color.green(coreColor), Color.blue(coreColor)));
         canvas.drawText(text, x, y, fillP);
 
-        // 6. Overdrive White-Hot Luminance Passes (101% - 200%)
         if (overdrive > 0.01f) {
             int boost1 = Math.min(255, Math.round(alpha * overdrive));
             fillP.setColor(Color.argb(boost1, 255, 255, 255));

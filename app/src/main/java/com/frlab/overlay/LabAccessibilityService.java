@@ -7,15 +7,14 @@ import android.view.Gravity;
 import android.view.WindowManager;
 import android.view.accessibility.AccessibilityEvent;
 
+import java.util.ArrayList;
+import java.util.List;
+
 public class LabAccessibilityService extends AccessibilityService implements LabState.Listener, LyricsCanvasView.DragCallback {
 
     private WindowManager windowManager;
-
-    private LyricsCanvasView primaryView;
-    private WindowManager.LayoutParams primaryParams;
-
-    private LyricsCanvasView cloneView;
-    private WindowManager.LayoutParams cloneParams;
+    private final List<LyricsCanvasView> layerViews = new ArrayList<>();
+    private final List<WindowManager.LayoutParams> layerParams = new ArrayList<>();
 
     @Override
     protected void onServiceConnected() {
@@ -39,7 +38,7 @@ public class LabAccessibilityService extends AccessibilityService implements Lab
     public void onDestroy() {
         LabState.accessibilityConnected = false;
         LabState.removeListener(this);
-        removeAllOverlays();
+        removeAllLayers();
         LabState.notifyChanged();
         super.onDestroy();
     }
@@ -52,19 +51,13 @@ public class LabAccessibilityService extends AccessibilityService implements Lab
     @Override
     public void onOverlayDragged() {
         int offsetPx = dp(LabState.doubleOffsetDp);
-        if (primaryView != null && primaryParams != null) {
-            primaryParams.x = LabState.posX;
-            primaryParams.y = LabState.posY;
+        for (int i = 0; i < layerViews.size(); i++) {
+            LyricsCanvasView view = layerViews.get(i);
+            WindowManager.LayoutParams lp = layerParams.get(i);
+            lp.x = LabState.posX + (i * offsetPx);
+            lp.y = LabState.posY + (i * offsetPx);
             try {
-                windowManager.updateViewLayout(primaryView, primaryParams);
-            } catch (Exception ignored) {
-            }
-        }
-        if (cloneView != null && cloneParams != null) {
-            cloneParams.x = LabState.posX + offsetPx;
-            cloneParams.y = LabState.posY + offsetPx;
-            try {
-                windowManager.updateViewLayout(cloneView, cloneParams);
+                windowManager.updateViewLayout(view, lp);
             } catch (Exception ignored) {
             }
         }
@@ -75,115 +68,86 @@ public class LabAccessibilityService extends AccessibilityService implements Lab
                 && LabState.activeMethod == LabState.METHOD_1_ACCESSIBILITY;
 
         if (!shouldShow) {
-            removeAllOverlays();
+            removeAllLayers();
             return;
         }
 
-        int primaryFlags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
-                | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN;
-        if (LabState.lockClickThrough) {
-            primaryFlags |= WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;
-        }
-
-        int cloneFlags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
-                | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
-                | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;
-
+        int targetLayers = Math.min(10, Math.max(1, LabState.stackLayers));
         float winAlpha = Math.min(100, Math.max(0, LabState.opacityPercent)) / 100f;
         LabState.lastAppliedWindowAlpha = winAlpha;
+        int offsetPx = dp(LabState.doubleOffsetDp);
 
-        if (primaryView == null) {
-            primaryParams = new WindowManager.LayoutParams(
+        while (layerViews.size() > targetLayers) {
+            int lastIdx = layerViews.size() - 1;
+            LyricsCanvasView view = layerViews.remove(lastIdx);
+            layerParams.remove(lastIdx);
+            try {
+                windowManager.removeView(view);
+            } catch (Exception ignored) {
+            }
+        }
+
+        while (layerViews.size() < targetLayers) {
+            int idx = layerViews.size();
+            boolean isClone = idx > 0;
+            WindowManager.LayoutParams lp = new WindowManager.LayoutParams(
                     WindowManager.LayoutParams.WRAP_CONTENT,
                     WindowManager.LayoutParams.WRAP_CONTENT,
                     WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
-                    primaryFlags,
+                    computeFlags(isClone),
                     PixelFormat.TRANSLUCENT
             );
-            primaryParams.gravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL;
-            primaryParams.x = LabState.posX;
-            primaryParams.y = LabState.posY;
-            primaryParams.alpha = winAlpha;
+            lp.gravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL;
+            lp.x = LabState.posX + (idx * offsetPx);
+            lp.y = LabState.posY + (idx * offsetPx);
+            lp.alpha = winAlpha;
 
-            primaryView = new LyricsCanvasView(this, false, this);
+            LyricsCanvasView view = new LyricsCanvasView(this, isClone, isClone ? null : this);
             try {
-                windowManager.addView(primaryView, primaryParams);
+                windowManager.addView(view, lp);
+                layerViews.add(view);
+                layerParams.add(lp);
             } catch (Exception e) {
-                primaryView = null;
+                break;
             }
-        } else {
-            primaryParams.flags = primaryFlags;
-            primaryParams.x = LabState.posX;
-            primaryParams.y = LabState.posY;
-            primaryParams.alpha = winAlpha;
+        }
+
+        for (int i = 0; i < layerViews.size(); i++) {
+            boolean isClone = i > 0;
+            LyricsCanvasView view = layerViews.get(i);
+            WindowManager.LayoutParams lp = layerParams.get(i);
+            lp.flags = computeFlags(isClone);
+            lp.x = LabState.posX + (i * offsetPx);
+            lp.y = LabState.posY + (i * offsetPx);
+            lp.alpha = winAlpha;
             try {
-                windowManager.updateViewLayout(primaryView, primaryParams);
+                windowManager.updateViewLayout(view, lp);
             } catch (Exception ignored) {
             }
-            primaryView.invalidate();
+            view.invalidate();
         }
 
-        if (LabState.doubleOverlay && primaryView != null) {
-            int offsetPx = dp(LabState.doubleOffsetDp);
-            if (cloneView == null) {
-                cloneParams = new WindowManager.LayoutParams(
-                        WindowManager.LayoutParams.WRAP_CONTENT,
-                        WindowManager.LayoutParams.WRAP_CONTENT,
-                        WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
-                        cloneFlags,
-                        PixelFormat.TRANSLUCENT
-                );
-                cloneParams.gravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL;
-                cloneParams.x = LabState.posX + offsetPx;
-                cloneParams.y = LabState.posY + offsetPx;
-                cloneParams.alpha = winAlpha;
-
-                cloneView = new LyricsCanvasView(this, true, null);
-                try {
-                    windowManager.addView(cloneView, cloneParams);
-                } catch (Exception e) {
-                    cloneView = null;
-                }
-            } else {
-                cloneParams.flags = cloneFlags;
-                cloneParams.x = LabState.posX + offsetPx;
-                cloneParams.y = LabState.posY + offsetPx;
-                cloneParams.alpha = winAlpha;
-                try {
-                    windowManager.updateViewLayout(cloneView, cloneParams);
-                } catch (Exception ignored) {
-                }
-                cloneView.invalidate();
-            }
-        } else {
-            removeCloneOverlay();
-        }
-
-        int count = (primaryView != null ? 1 : 0) + (cloneView != null ? 1 : 0);
-        LabState.activeWindowCount = count;
+        LabState.activeWindowCount = layerViews.size();
     }
 
-    private void removeCloneOverlay() {
-        if (cloneView != null) {
-            try {
-                windowManager.removeView(cloneView);
-            } catch (Exception ignored) {
-            }
-            cloneView = null;
-            cloneParams = null;
+    private int computeFlags(boolean isClone) {
+        int baseFlags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN;
+        if (isClone || LabState.lockClickThrough) {
+            return baseFlags | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;
         }
+        return baseFlags;
     }
 
-    private void removeAllOverlays() {
-        removeCloneOverlay();
-        if (primaryView != null) {
+    private void removeAllLayers() {
+        for (int i = layerViews.size() - 1; i >= 0; i--) {
             try {
-                windowManager.removeView(primaryView);
+                windowManager.removeView(layerViews.get(i));
             } catch (Exception ignored) {
             }
-            primaryView = null;
-            primaryParams = null;
         }
+        layerViews.clear();
+        layerParams.clear();
         if (LabState.activeMethod == LabState.METHOD_1_ACCESSIBILITY) {
             LabState.activeWindowCount = 0;
         }
