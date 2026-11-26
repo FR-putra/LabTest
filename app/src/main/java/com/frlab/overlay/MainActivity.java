@@ -4,6 +4,7 @@ import android.Manifest;
 import android.app.Activity;
 import android.content.ClipData;
 import android.content.ClipboardManager;
+import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
@@ -14,6 +15,7 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.provider.Settings;
+import android.text.TextUtils;
 import android.util.Log;
 import android.util.TypedValue;
 import android.view.View;
@@ -73,7 +75,6 @@ public class MainActivity extends Activity implements LabState.Listener {
         root.setPadding(pad, dp(24), pad, dp(36));
         scrollView.addView(root);
 
-        // Header
         TextView title = new TextView(this);
         title.setText("OverlayLab16 - Uji Android 16");
         title.setTextColor(Color.WHITE);
@@ -88,7 +89,6 @@ public class MainActivity extends Activity implements LabState.Listener {
         subtitle.setPadding(0, dp(4), 0, dp(14));
         root.addView(subtitle);
 
-        // Status Card
         LinearLayout statusCard = makeCard();
         statusText = new TextView(this);
         statusText.setTextColor(Color.parseColor("#E2E8F0"));
@@ -96,7 +96,6 @@ public class MainActivity extends Activity implements LabState.Listener {
         statusCard.addView(statusText);
         root.addView(statusCard);
 
-        // Permission Card
         LinearLayout permCard = makeCard();
         permCard.addView(makeSectionTitle("1. Izin Sistem"));
 
@@ -119,7 +118,7 @@ public class MainActivity extends Activity implements LabState.Listener {
             public void onClick(View v) {
                 Toast.makeText(
                         MainActivity.this,
-                        "Jika terkunci: Info Aplikasi -> titik 3 -> Izinkan setelan terbatas",
+                        "Aktifkan OverlayLab16 Accessibility Overlay",
                         Toast.LENGTH_LONG
                 ).show();
                 startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS));
@@ -128,7 +127,6 @@ public class MainActivity extends Activity implements LabState.Listener {
         permCard.addView(btnAccPerm);
         root.addView(permCard);
 
-        // Master Controls Card
         LinearLayout controlCard = makeCard();
         controlCard.addView(makeSectionTitle("2. Kontrol Utama"));
 
@@ -143,11 +141,13 @@ public class MainActivity extends Activity implements LabState.Listener {
                 }
                 if (isChecked && LabState.activeMethod == LabState.METHOD_1_ACCESSIBILITY && !LabState.accessibilityConnected) {
                     buttonView.setChecked(false);
-                    Toast.makeText(MainActivity.this, "Aktifkan Layanan Aksesibilitas dulu!", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(MainActivity.this, "Matikan lalu nyalakan ulang layanan Aksesibilitas di Settings!", Toast.LENGTH_LONG).show();
                     return;
                 }
                 LabState.overlayEnabled = isChecked;
-                startService(new Intent(MainActivity.this, OverlayLabService.class));
+                if (LabState.activeMethod != LabState.METHOD_1_ACCESSIBILITY) {
+                    startService(new Intent(MainActivity.this, OverlayLabService.class));
+                }
                 LabState.notifyChanged();
             }
         });
@@ -164,7 +164,6 @@ public class MainActivity extends Activity implements LabState.Listener {
         controlCard.addView(lockSwitch);
         root.addView(controlCard);
 
-        // Methods Card
         LinearLayout methodCard = makeCard();
         methodCard.addView(makeSectionTitle("3. Pilih Metode Tembus Klik"));
 
@@ -181,7 +180,7 @@ public class MainActivity extends Activity implements LabState.Listener {
             @Override
             public void onCheckedChanged(RadioGroup group, int checkedId) {
                 LabState.activeMethod = checkedId;
-                if (LabState.overlayEnabled) {
+                if (LabState.overlayEnabled && checkedId != LabState.METHOD_1_ACCESSIBILITY) {
                     startService(new Intent(MainActivity.this, OverlayLabService.class));
                 }
                 LabState.notifyChanged();
@@ -204,7 +203,6 @@ public class MainActivity extends Activity implements LabState.Listener {
         methodCard.addView(cap80Checkbox);
         root.addView(methodCard);
 
-        // Opacity 0-200% Card
         LinearLayout opacityCard = makeCard();
         opacityCard.addView(makeSectionTitle("4. Eksperimen Opacity (0% - 200% Overdrive)"));
 
@@ -237,7 +235,6 @@ public class MainActivity extends Activity implements LabState.Listener {
         opacityCard.addView(opacitySeek);
         root.addView(opacityCard);
 
-        // Double Floating Lyrics Card
         LinearLayout doubleCard = makeCard();
         doubleCard.addView(makeSectionTitle("5. Eksperimen Double Floating Lyrics"));
 
@@ -360,10 +357,38 @@ public class MainActivity extends Activity implements LabState.Listener {
         });
     }
 
+    private boolean isAccessibilityEnabledInSettings() {
+        try {
+            int enabled = Settings.Secure.getInt(getContentResolver(), Settings.Secure.ACCESSIBILITY_ENABLED, 0);
+            if (enabled != 1) {
+                return false;
+            }
+            String services = Settings.Secure.getString(getContentResolver(), Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES);
+            if (TextUtils.isEmpty(services)) {
+                return false;
+            }
+            ComponentName expected = new ComponentName(this, LabAccessibilityService.class);
+            String full = expected.flattenToString();
+            String shortName = expected.flattenToShortString();
+            return services.contains(full) || services.contains(shortName);
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
     private void updateLabels() {
         boolean canOverlay = Settings.canDrawOverlays(this);
+        String accStatus;
+        if (LabState.accessibilityConnected) {
+            accStatus = "TERHUBUNG";
+        } else if (isAccessibilityEnabledInSettings()) {
+            accStatus = "TERDAFTAR (Toggle ulang di Settings)";
+        } else {
+            accStatus = "MATI";
+        }
+
         String status = "Izin Overlay: " + (canOverlay ? "AKTIF" : "BELUM")
-                + " | Aksesibilitas: " + (LabState.accessibilityConnected ? "TERHUBUNG" : "MATI")
+                + " | Aksesibilitas: " + accStatus
                 + "\nWindow Alpha dikirim ke OS: " + String.format("%.2f", LabState.lastAppliedWindowAlpha)
                 + "\nStatus Metode 4: " + LabState.method4Diagnostic;
         statusText.setText(status);

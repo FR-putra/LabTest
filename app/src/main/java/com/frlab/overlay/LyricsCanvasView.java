@@ -48,12 +48,20 @@ public class LyricsCanvasView extends View {
         @Override
         public void run() {
             long now = System.currentTimeMillis();
-            if (now - lineStartMs >= 3000L) {
+            long elapsed = now - lineStartMs;
+            if (elapsed >= 3000L) {
                 lyricIndex = (lyricIndex + 1) % SAMPLE_LYRICS.length;
                 lineStartMs = now;
+                elapsed = 0L;
             }
             invalidate();
-            animHandler.postDelayed(this, 33L);
+
+            if (elapsed < 460L) {
+                animHandler.postDelayed(this, 33L);
+            } else {
+                long waitMs = Math.max(50L, 3000L - elapsed);
+                animHandler.postDelayed(this, waitMs);
+            }
         }
     };
 
@@ -69,11 +77,13 @@ public class LyricsCanvasView extends View {
         strokePaint.setTypeface(boldType);
         strokePaint.setStyle(Paint.Style.STROKE);
         strokePaint.setStrokeJoin(Paint.Join.ROUND);
+        strokePaint.setStrokeCap(Paint.Cap.ROUND);
         strokePaint.setTextAlign(Paint.Align.CENTER);
 
         glowPaint.setTypeface(boldType);
         glowPaint.setStyle(Paint.Style.STROKE);
         glowPaint.setStrokeJoin(Paint.Join.ROUND);
+        glowPaint.setStrokeCap(Paint.Cap.ROUND);
         glowPaint.setTextAlign(Paint.Align.CENTER);
 
         fillPaint.setTypeface(boldType);
@@ -83,6 +93,7 @@ public class LyricsCanvasView extends View {
         subStrokePaint.setTypeface(medType);
         subStrokePaint.setStyle(Paint.Style.STROKE);
         subStrokePaint.setStrokeJoin(Paint.Join.ROUND);
+        subStrokePaint.setStrokeCap(Paint.Cap.ROUND);
         subStrokePaint.setTextAlign(Paint.Align.CENTER);
 
         subFillPaint.setTypeface(medType);
@@ -137,14 +148,12 @@ public class LyricsCanvasView extends View {
         float enterProgress = Math.min(1f, elapsed / 260f);
         float ease = 1f - (1f - enterProgress) * (1f - enterProgress);
 
-        // Follow-delay untuk baris ke-2 (tertinggal 120ms agar terasa mengalir)
         float followProgress = Math.min(1f, Math.max(0f, (elapsed - 120L) / 300f));
         float followEase = 1f - (1f - followProgress) * (1f - followProgress);
 
         float centerX = getWidth() / 2f;
-        float cursorY = dp(24f);
+        float cursorY;
 
-        // 1. Optional Diagnostic Pill
         if (LabState.showDiagnosticPill) {
             String modeTag = "M" + LabState.activeMethod
                     + " | " + (LabState.lockClickThrough ? "LOCK" : "DRAG")
@@ -171,7 +180,6 @@ public class LyricsCanvasView extends View {
         float mainOffsetY = (1f - ease) * dp(8f);
         int animCoreAlpha = Math.round(coreAlpha * (0.35f + 0.65f * ease));
 
-        // 2. Render Primary Lyric Line (Dual-Pass Stroke + Overdrive Glow)
         drawEnhancedLine(
                 canvas,
                 primaryLine,
@@ -185,7 +193,6 @@ public class LyricsCanvasView extends View {
                 true
         );
 
-        // 3. Render Stacked Double Floating Lyrics (jika aktif)
         if (LabState.doubleLyrics) {
             float gapPx = dp(LabState.doubleGapDp);
             float subTextSize = dp(14.5f);
@@ -225,22 +232,20 @@ public class LyricsCanvasView extends View {
         sPaint.setTextSize(textSize);
         fPaint.setTextSize(textSize);
 
-        // Pass 1: Outline hitam pekat (kunci ketajaman tanpa kotak background)
-        float blackStrokeW = dp(isPrimary ? 3.8f : 3.0f) + (overdrive * dp(1.4f));
+        // Pass 1: Outer Neon Aura Stroke (murni vektor GPU tanpa ShadowLayer)
+        if (isPrimary || overdrive > 0.05f) {
+            glowPaint.setTextSize(textSize);
+            glowPaint.setStrokeWidth(dp(isPrimary ? 6.0f : 4.5f) + overdrive * dp(4.5f));
+            int glowAlpha = Math.min(255, Math.round(alpha * (0.28f + 0.52f * overdrive)));
+            glowPaint.setColor(Color.argb(glowAlpha, Color.red(glowColor), Color.green(glowColor), Color.blue(glowColor)));
+            canvas.drawText(text, x, y, glowPaint);
+        }
+
+        // Pass 2: Outline hitam pekat untuk kontras tinggi di latar terang
+        float blackStrokeW = dp(isPrimary ? 3.8f : 3.0f) + (overdrive * dp(1.2f));
         sPaint.setStrokeWidth(blackStrokeW);
         sPaint.setColor(Color.argb(alpha, 0, 0, 0));
         canvas.drawText(text, x, y, sPaint);
-
-        // Pass 2: Neon aura / glow stroke (menguat saat opacity > 100%)
-        if (isPrimary || overdrive > 0.05f) {
-            glowPaint.setTextSize(textSize);
-            glowPaint.setStrokeWidth(dp(2.2f) + overdrive * dp(3.2f));
-            int glowAlpha = Math.min(255, Math.round(alpha * (0.35f + 0.65f * overdrive)));
-            glowPaint.setColor(Color.argb(glowAlpha, Color.red(glowColor), Color.green(glowColor), Color.blue(glowColor)));
-            glowPaint.setShadowLayer(dp(4f + overdrive * 10f), 0f, 0f, glowColor);
-            canvas.drawText(text, x, y, glowPaint);
-            glowPaint.clearShadowLayer();
-        }
 
         // Pass 3: Core text fill
         fPaint.setColor(Color.argb(alpha, Color.red(fillColor), Color.green(fillColor), Color.blue(fillColor)));
