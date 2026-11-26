@@ -36,10 +36,13 @@ public class OverlayLabService extends Service implements LabState.Listener {
         windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
         createNotificationChannel();
         Notification notification = buildNotification();
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(NOTIF_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK);
-        } else {
-            startForeground(NOTIF_ID, notification);
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                startForeground(NOTIF_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK);
+            } else {
+                startForeground(NOTIF_ID, notification);
+            }
+        } catch (Exception ignored) {
         }
         LabState.addListener(this);
         syncOverlay();
@@ -78,6 +81,9 @@ public class OverlayLabService extends Service implements LabState.Listener {
             return;
         }
 
+        boolean shouldEnableMethod4Hook = LabState.activeMethod == LabState.METHOD_4_TOUCH_REGION
+                && LabState.lockClickThrough;
+
         if (overlayView == null) {
             params = new WindowManager.LayoutParams(
                     WindowManager.LayoutParams.WRAP_CONTENT,
@@ -93,7 +99,7 @@ public class OverlayLabService extends Service implements LabState.Listener {
             LabState.lastAppliedWindowAlpha = params.alpha;
 
             overlayView = new LyricsCanvasView(this, windowManager, params);
-            applyMethod4InsetsIfNeeded(true);
+            applyMethod4InsetsIfNeeded(shouldEnableMethod4Hook);
             try {
                 windowManager.addView(overlayView, params);
             } catch (Exception e) {
@@ -103,7 +109,7 @@ public class OverlayLabService extends Service implements LabState.Listener {
             params.flags = computeFlags();
             params.alpha = computeWindowAlpha();
             LabState.lastAppliedWindowAlpha = params.alpha;
-            applyMethod4InsetsIfNeeded(LabState.activeMethod == LabState.METHOD_4_TOUCH_REGION && LabState.lockClickThrough);
+            applyMethod4InsetsIfNeeded(shouldEnableMethod4Hook);
             try {
                 windowManager.updateViewLayout(overlayView, params);
             } catch (Exception ignored) {
@@ -124,7 +130,6 @@ public class OverlayLabService extends Service implements LabState.Listener {
             return baseFlags | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;
         }
 
-        // Method 4 sengaja TIDAK memakai FLAG_NOT_TOUCHABLE agar alpha 1.0f tidak dipaksa turun
         return baseFlags;
     }
 
@@ -172,7 +177,7 @@ public class OverlayLabService extends Service implements LabState.Listener {
                                         region.setEmpty();
                                     }
                                     Method setInsets = info.getClass().getMethod("setTouchableInsets", int.class);
-                                    setInsets.invoke(info, 3); // TOUCHABLE_INSETS_REGION
+                                    setInsets.invoke(info, 3);
                                 }
                                 return null;
                             }
@@ -181,7 +186,7 @@ public class OverlayLabService extends Service implements LabState.Listener {
                 Method addMethod = ViewTreeObserver.class.getMethod("addOnComputeInternalInsetsListener", listenerClass);
                 addMethod.invoke(vto, internalInsetsProxy);
             }
-            LabState.method4Diagnostic = "Hook reflection terpasang (Region kosong, Alpha 1.0)";
+            LabState.method4Diagnostic = "Hook reflection aktif (Region kosong, Alpha 1.0)";
         } catch (Throwable t) {
             LabState.method4Diagnostic = "Diblokir Android 16: " + t.getClass().getSimpleName();
         }
